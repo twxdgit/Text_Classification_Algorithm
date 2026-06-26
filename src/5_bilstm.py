@@ -72,7 +72,7 @@ print(f"  词表大小: {len(word2idx):,}, 词向量维度: {DIM}")
 class TextDataset(Dataset):
     def __init__(self, texts, labels, word2idx, max_len):
         self.max_len = max_len
-        self.labels  = np.array(labels, dtype=np.int64)
+        self.labels  = np.array(labels, dtype=np.int64) - 1   # 原始标签 1-4 → 0-3
         self.ids = []
         for t in texts:
             tok = str(t).split()
@@ -107,7 +107,7 @@ class BiLSTMClassifier(nn.Module):
         self.embedding = nn.Embedding.from_pretrained(
             torch.tensor(embed_matrix), padding_idx=0, freeze=False)
         self.lstm = nn.LSTM(dim, hidden, batch_first=True,
-                            bidirectional=True, dropout=dropout)
+                            bidirectional=True, dropout=0)
         self.fc   = nn.Linear(2 * hidden, num_classes)
         self.drop  = nn.Dropout(dropout)
 
@@ -165,7 +165,8 @@ print(f"\n[Best val acc: {best_val_acc:.4f}]")
 
 # ---------- 测试集评估 ----------
 from sklearn.metrics import (accuracy_score, precision_score, recall_score,
-                              f1_score, roc_auc_score, label_binarize)
+                              f1_score, roc_auc_score)
+from sklearn.preprocessing import LabelBinarizer
 
 model.load_state_dict(best_state)
 model.eval()
@@ -179,14 +180,17 @@ with torch.no_grad():
 
 y_pred  = np.concatenate(all_preds)
 y_score = np.concatenate(all_scores)
-y_true  = np.array(y_te, dtype=np.int64)
+y_true  = np.array(y_te, dtype=np.int64) - 1  # 原始标签 1-4 → 0-3
 
 acc  = accuracy_score(y_true, y_pred)
 prec = precision_score(y_true, y_pred, average="macro")
 rec  = recall_score(y_true, y_pred, average="macro")
 f1   = f1_score(y_true, y_pred, average="macro")
-auc  = roc_auc_score(label_binarize(y_true, classes=range(N_CLASSES)),
-                     y_score, average="macro", multi_class="ovr")
+lb = LabelBinarizer()
+y_bin = lb.fit_transform(y_true)
+if y_bin.shape[1] == 1:
+    y_bin = np.hstack([1 - y_bin, y_bin])
+auc  = roc_auc_score(y_bin, y_score, average="macro", multi_class="ovr")
 
 print(f"\n[Test] BiLSTM  Acc={acc:.4f} Prec={prec:.4f} Rec={rec:.4f} F1={f1:.4f} AUC={auc:.4f}")
 
@@ -195,3 +199,8 @@ pd.DataFrame([{
     "acc": acc, "prec": prec, "rec": rec, "f1": f1, "auc": auc
 }]).to_csv(os.path.join(RES_DIR, "bilstm_results.csv"), index=False, encoding="utf-8")
 print(f"[Done] 结果保存 → {os.path.join(RES_DIR, 'bilstm_results.csv')}")
+
+# ---------- 保存原始预测概率（供精确 ROC 曲线使用） ----------
+np.save(os.path.join(RES_DIR, "bilstm_y_true.npy"),  y_true)
+np.save(os.path.join(RES_DIR, "bilstm_y_score.npy"), y_score)
+print(f"  [ok] 原始预测概率已保存 → results/bilstm_y_true/score.npy")

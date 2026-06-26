@@ -1,0 +1,7 @@
+<package
+    id="mock_corpus"
+    name="Mock Corpus"
+    description="This is a mock corpus for testing the index.xml automation workflow. It can be safely added and removed."
+    unzip="1"
+    license="Public Domain"
+    />
